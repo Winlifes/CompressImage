@@ -1,92 +1,94 @@
-# 压缩工具箱
+# CompressImage
 
-一个基于 Python + Tkinter 的桌面工具，适合做这几件事：
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
-- 压缩图片
-- 压缩普通文件
-- 计算文件 MD5 / SHA1 / SHA256
+A lightweight desktop tool built with Python + Tkinter for:
 
-## 说明
+- Image compression
+- File compression
+- File hash calculation (`MD5 / SHA1 / SHA256`)
 
-MD5 是由文件内容计算出来的哈希值，不是一个可以单独“修改”的文件属性。
+## Notes
 
-这个项目提供的是：
+MD5 is calculated from the file content itself. It is not a standalone file property that can be edited directly.
 
-- 合法的文件哈希计算
-- 正常的图片/文件压缩
+This project provides:
 
-不提供专门用于伪造、绕过校验或“改 MD5 不改内容”的功能。
+- Legitimate file hash calculation
+- Normal image and file compression workflows
 
-## 功能
+It does **not** provide features intended to forge hashes, bypass validation, or “change MD5 without changing content”.
 
-### 1. 图片压缩
+## Features
 
-- 支持 `JPG / PNG / WEBP / BMP / TIFF`
-- 支持直接选择整个图片文件夹
-- 支持递归扫描子文件夹批量压缩
-- 压缩后保留原文件名
-- 可选输出格式：`保持原格式 / JPEG / WEBP / PNG`
-- 可选压缩质量
-- PNG 支持 `标准 PNG` 和 `Tinify-like PNG` 两种模式
-- 单图模式输出到源文件目录下的 `compressed_output`
-- 文件夹模式输出到所选目录下的 `compressed_output`，并保留原目录层级
-- 内置缩略图预览，默认展示前几张图片
+### 1. Image Compression
 
-### 2. 文件压缩
+- Supports `JPG / PNG / WEBP / BMP / TIFF`
+- Supports selecting a whole image folder
+- Supports recursive batch processing for subfolders
+- Keeps the original file name after compression
+- Output format options: `Keep Original / JPEG / WEBP / PNG`
+- Adjustable quality for lossy formats
+- PNG modes: `Standard PNG` and `Tinify-like PNG`
+- Single-file mode outputs to `compressed_output` next to the source image
+- Folder mode outputs to `compressed_output` under the selected folder while preserving relative structure
+- Built-in thumbnail preview for the first few selected images
 
-- 支持直接选择整个文件夹
-- 支持递归扫描子文件夹后统一打包
-- 支持 `zip`
-- 支持 `tar.gz`
-- 支持 `tar.xz`
-- 支持单文件 `gz`
-- 文件夹模式会保留归档内的目录结构
+### 2. File Compression
 
-### 3. 哈希计算
+- Supports selecting a whole folder
+- Supports recursive file collection before archiving
+- Supports `zip`
+- Supports `tar.gz`
+- Supports `tar.xz`
+- Supports single-file `gz`
+- Folder mode preserves directory structure inside the archive
 
-- 计算 `MD5`
-- 计算 `SHA1`
-- 计算 `SHA256`
+### 3. Hash Calculation
 
-## 界面升级
+- Calculate `MD5`
+- Calculate `SHA1`
+- Calculate `SHA256`
 
-- 深色头部 + 卡片式状态面板
-- 三个功能页签分区更清晰
-- 日志输出区域改成可滚动查看
-- 当前处理状态会显示在底部状态栏
-- 支持把文件或文件夹直接拖进窗口
+## UI Highlights
 
-## 拖拽支持
+- Dark header with status cards
+- Clear tab-based workflow
+- Scrollable result logs
+- Bottom status bar for current progress
+- Drag and drop support for files and folders
 
-- 已在 `requirements.txt` 中加入 `tkinterdnd2`
-- 首次使用前建议重新执行一次依赖安装
+## Drag & Drop
 
-## Tinify-like PNG 模式
+- `tkinterdnd2` is included in `requirements.txt`
+- Reinstall dependencies once before first use if needed
 
-- 使用 `imagequant` 做 256 色调色板量化
-- 默认关闭抖动，参数接近 Tinify 的 PNG 样本表现
-- 量化质量区间固定为 `40~90`
-- 若检测到 `zopfli`，会继续做一轮 PNG 深度优化
-- 若本机缺少依赖，会自动回退到标准 PNG 压缩
+## Tinify-like PNG Mode
 
-## 运行
+- Uses `imagequant` for 256-color palette quantization
+- Uses no dithering by default to better match the tested Tinify PNG samples
+- Uses a fixed quantization quality range of `40~90`
+- Runs an extra PNG optimization pass with `zopfli` when available
+- Falls back to standard PNG compression automatically if dependencies are missing
 
-先安装依赖：
+## Run
+
+Install dependencies:
 
 ```bash
 python3 -m pip install -r requirements.txt
 ```
 
-启动程序：
+Start the app:
 
 ```bash
 python3 app.py
 ```
 
-## 适合后续继续扩展的方向
+## Possible Next Improvements
 
-- 拖拽上传文件
-- 图片尺寸缩放
-- WebP 无损 / 有损切换
-- 导出哈希清单到文本文件
-- 做成 macOS / Windows 可执行程序
+- Better drag-hover effects
+- Image resize options
+- Lossless/lossy WebP switch
+- Export hash lists to text files
+- Package as macOS / Windows desktop app
