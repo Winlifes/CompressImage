@@ -7,17 +7,7 @@ A lightweight desktop tool built with Python + Tkinter for:
 - Image compression
 - File compression
 - File hash calculation (`MD5 / SHA1 / SHA256`)
-
-## Notes
-
-MD5 is calculated from the file content itself. It is not a standalone file property that can be edited directly.
-
-This project provides:
-
-- Legitimate file hash calculation
-- Normal image and file compression workflows
-
-It does **not** provide features intended to forge hashes, bypass validation, or “change MD5 without changing content”.
+- MD5 modification (change file MD5 without affecting visible content)
 
 ## Features
 
@@ -49,6 +39,14 @@ It does **not** provide features intended to forge hashes, bypass validation, or
 - Calculate `MD5`
 - Calculate `SHA1`
 - Calculate `SHA256`
+
+### 4. MD5 Modification
+
+- Change the MD5 hash of any file without affecting its visible content
+- Appends random bytes to a copy of the file
+- Supports batch processing and folder recursion
+- Preserves directory structure in the output `md5_modified` folder
+- Displays before and after MD5 values
 
 ## UI Highlights
 
