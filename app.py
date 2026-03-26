@@ -112,6 +112,15 @@ def infer_base_dir(collected_files: list[Path], dropped_paths: list[Path]) -> Pa
     return None
 
 
+def modify_file_md5(source: Path, output: Path) -> tuple[str, str]:
+    """复制文件并追加随机字节以改变 MD5，返回 (原始MD5, 新MD5)。"""
+    original_md5 = hash_file(source, "md5")
+    data = source.read_bytes()
+    output.write_bytes(data + os.urandom(16))
+    new_md5 = hash_file(output, "md5")
+    return original_md5, new_md5
+
+
 class CompressApp:
     def __init__(self, root: Tk) -> None:
         self.root = root
@@ -124,6 +133,8 @@ class CompressApp:
         self.file_items: list[Path] = []
         self.file_base_dir: Path | None = None
         self.hash_file_path: Path | None = None
+        self.md5_files: list[Path] = []
+        self.md5_base_dir: Path | None = None
         self.thumbnail_refs: list[ImageTk.PhotoImage] = []
 
         self.image_quality = StringVar(value="80")
@@ -211,6 +222,7 @@ class CompressApp:
         self.image_log = self._build_image_tab(self.notebook)
         self.archive_log = self._build_archive_tab(self.notebook)
         self.hash_output = self._build_hash_tab(self.notebook)
+        self.md5_log = self._build_md5_modify_tab(self.notebook)
 
         footer = ttk.Frame(app, style="App.TFrame")
         footer.pack(fill="x", pady=(10, 0))
@@ -346,6 +358,29 @@ class CompressApp:
 
         output = self._make_log(panel)
         return output
+
+    def _build_md5_modify_tab(self, notebook: ttk.Notebook) -> ScrolledText:
+        panel = self._build_panel(
+            notebook,
+            "MD5 改写",
+            "在不影响文件内容显示的前提下修改其 MD5 值。输出到同目录下的 md5_modified 文件夹。",
+        )
+
+        source_row = ttk.Frame(panel, style="Panel.TFrame")
+        source_row.pack(fill="x", pady=(0, 12))
+        ttk.Button(source_row, text="选择文件", style="Secondary.TButton", command=self.choose_md5_files).pack(side="left")
+        ttk.Button(source_row, text="选择文件夹", style="Secondary.TButton", command=self.choose_md5_folder).pack(side="left", padx=8)
+        ttk.Checkbutton(source_row, text="递归扫描子文件夹", variable=self.file_recursive).pack(side="left", padx=10)
+
+        self.md5_summary = StringVar(value="未选择文件")
+        ttk.Label(panel, textvariable=self.md5_summary, style="PanelText.TLabel").pack(anchor="w")
+
+        action_row = ttk.Frame(panel, style="Panel.TFrame")
+        action_row.pack(fill="x", pady=(12, 12))
+        ttk.Button(action_row, text="开始处理", style="Primary.TButton", command=self.modify_file_md5s).pack(side="right")
+
+        log = self._make_log(panel)
+        return log
 
     def _make_log(self, parent: ttk.Frame) -> ScrolledText:
         log = ScrolledText(
@@ -485,6 +520,8 @@ class CompressApp:
             self._handle_image_drop(paths)
         elif selected_tab == "文件压缩":
             self._handle_file_drop(paths)
+        elif selected_tab == "MD5 改写":
+            self._handle_md5_drop(paths)
         else:
             self._handle_hash_drop(paths)
         return "break"
@@ -529,6 +566,79 @@ class CompressApp:
         self.hash_file_path = target
         self.hash_summary.set(str(target))
         self._set_status("已通过拖拽选择哈希文件")
+
+    def _handle_md5_drop(self, paths: list[Path]) -> None:
+        files: list[Path] = []
+        for path in paths:
+            if path.is_dir():
+                files.extend(find_regular_files(path, recursive=self.file_recursive.get()))
+            elif path.is_file():
+                files.append(path)
+
+        if not files:
+            messagebox.showwarning("提示", "拖入的内容里没有可处理的文件。")
+            return
+
+        base_dir = infer_base_dir(files, paths)
+        self._apply_md5_selection(files, base_dir=base_dir, source_label="拖拽导入")
+        self._set_status("已通过拖拽载入 MD5 改写文件")
+
+    def choose_md5_files(self) -> None:
+        selected = filedialog.askopenfilenames(title="选择文件", filetypes=[("All Files", "*.*")])
+        self._apply_md5_selection([Path(item) for item in selected], base_dir=None)
+
+    def choose_md5_folder(self) -> None:
+        selected = filedialog.askdirectory(title="选择文件夹")
+        if not selected:
+            return
+        folder = Path(selected)
+        files = find_regular_files(folder, recursive=self.file_recursive.get())
+        self._apply_md5_selection(files, base_dir=folder, source_label=f"文件夹 {folder.name}")
+
+    def _apply_md5_selection(self, files: list[Path], base_dir: Path | None, source_label: str | None = None) -> None:
+        self.md5_files = sorted(files)
+        self.md5_base_dir = base_dir
+        if self.md5_files:
+            label = source_label or "已选择文件"
+            self.md5_summary.set(f"{label}，共 {len(self.md5_files)} 个")
+            self._set_status("已载入 MD5 改写文件列表")
+        else:
+            self.md5_summary.set("未选择文件")
+
+    def modify_file_md5s(self) -> None:
+        if not self.md5_files:
+            messagebox.showwarning("提示", "请先选择文件。")
+            return
+
+        self.md5_log.delete("1.0", END)
+        self._set_status("正在处理 MD5 改写…")
+
+        success_count = 0
+        for file_path in self.md5_files:
+            try:
+                if self.md5_base_dir and file_path.is_relative_to(self.md5_base_dir):
+                    relative_parent = file_path.parent.relative_to(self.md5_base_dir)
+                    output_dir = self.md5_base_dir / "md5_modified" / relative_parent
+                else:
+                    output_dir = file_path.parent / "md5_modified"
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                output_path = output_dir / file_path.name
+                original_md5, new_md5 = modify_file_md5(file_path, output_path)
+
+                self.md5_log.insert(
+                    END,
+                    f"{file_path}\n"
+                    f"  原始 MD5: {original_md5}\n"
+                    f"  新   MD5: {new_md5}\n"
+                    f"  输出: {output_path}\n\n",
+                )
+                success_count += 1
+            except Exception as exc:
+                self.md5_log.insert(END, f"{file_path}\n  失败: {exc}\n\n")
+
+        self._set_status(f"MD5 改写完成：{success_count}/{len(self.md5_files)}")
+        messagebox.showinfo("完成", f"MD5 改写完成：成功 {success_count} / {len(self.md5_files)}")
 
     def compress_images(self) -> None:
         if not self.image_files:
