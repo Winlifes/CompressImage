@@ -19,6 +19,9 @@ A lightweight desktop tool built with Python + Tkinter for:
 - Keeps the original file name after compression
 - Output format options: `Keep Original / JPEG / WEBP / PNG`
 - Adjustable quality for lossy formats
+- Resize options: keep original, scale by percentage, limit the longest edge, or set custom width/height
+- Custom width and height can use different ratios, and the image will be stretched automatically
+- A `Lock aspect ratio` option is available for custom width/height resizing
 - PNG modes: `Standard PNG` and `Tinify-like PNG`
 - Single-file mode outputs to `compressed_output` next to the source image
 - Folder mode outputs to `compressed_output` under the selected folder while preserving relative structure

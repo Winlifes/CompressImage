@@ -34,6 +34,10 @@ THUMBNAIL_SIZE = (120, 120)
 PREVIEW_LIMIT = 8
 PNG_STANDARD_MODE = "标准 PNG"
 PNG_TINIFY_MODE = "Tinify-like PNG"
+RESIZE_KEEP_MODE = "不调整"
+RESIZE_PERCENT_MODE = "按百分比"
+RESIZE_MAX_EDGE_MODE = "按最长边"
+RESIZE_CUSTOM_MODE = "自定义宽高"
 TINIFY_LIKE_PARAMS = {
     "max_colors": 256,
     "dithering_level": 0.0,
@@ -142,6 +146,11 @@ class CompressApp:
         self.png_mode = StringVar(
             value=PNG_TINIFY_MODE if imagequant is not None else PNG_STANDARD_MODE
         )
+        self.resize_mode = StringVar(value=RESIZE_KEEP_MODE)
+        self.resize_value = StringVar(value="100")
+        self.resize_width = StringVar(value="800")
+        self.resize_height = StringVar(value="600")
+        self.lock_aspect_ratio = BooleanVar(value=False)
         self.archive_format = StringVar(value="zip")
         self.image_recursive = BooleanVar(value=True)
         self.file_recursive = BooleanVar(value=True)
@@ -149,9 +158,11 @@ class CompressApp:
         self.drag_hint = StringVar(
             value="将文件或文件夹拖到窗口中；会按当前页签自动分发到图片压缩、文件压缩或哈希计算。"
         )
+        self._resize_trace_guard = False
 
         self._configure_styles()
         self._build_layout()
+        self._bind_resize_traces()
         self._enable_drag_drop()
 
     def _configure_styles(self) -> None:
@@ -293,11 +304,30 @@ class CompressApp:
             width=16,
             state="readonly",
         ).pack(side="left", padx=8)
+        ttk.Label(options_row, text="尺寸调整", style="PanelText.TLabel").pack(side="left", padx=(18, 0))
+        ttk.Combobox(
+            options_row,
+            textvariable=self.resize_mode,
+            values=[RESIZE_KEEP_MODE, RESIZE_PERCENT_MODE, RESIZE_MAX_EDGE_MODE, RESIZE_CUSTOM_MODE],
+            width=10,
+            state="readonly",
+        ).pack(side="left", padx=8)
+        ttk.Entry(options_row, textvariable=self.resize_value, width=8).pack(side="left", padx=(0, 8))
+        ttk.Label(options_row, text="宽", style="PanelText.TLabel").pack(side="left")
+        ttk.Entry(options_row, textvariable=self.resize_width, width=8).pack(side="left", padx=(4, 8))
+        ttk.Label(options_row, text="高", style="PanelText.TLabel").pack(side="left")
+        ttk.Entry(options_row, textvariable=self.resize_height, width=8).pack(side="left", padx=(4, 8))
+        ttk.Checkbutton(options_row, text="锁定宽高比", variable=self.lock_aspect_ratio).pack(side="left", padx=(8, 8))
         ttk.Button(options_row, text="开始压缩", style="Primary.TButton", command=self.compress_images).pack(side="right")
 
         self.png_mode_note = StringVar()
         self._refresh_png_mode_note()
         ttk.Label(panel, textvariable=self.png_mode_note, style="PanelText.TLabel").pack(anchor="w", pady=(0, 10))
+        ttk.Label(
+            panel,
+            text="尺寸调整支持按百分比缩放、限制最长边，或自定义宽高。未锁定宽高比时，自定义尺寸会自动拉伸。",
+            style="PanelText.TLabel",
+        ).pack(anchor="w", pady=(0, 10))
 
         preview_panel = ttk.Frame(panel, style="Preview.TFrame", padding=12)
         preview_panel.pack(fill="x", pady=(0, 12))
@@ -405,6 +435,58 @@ class CompressApp:
         for widget in [self.root, self.drop_banner_text]:
             widget.drop_target_register(DND_FILES)
             widget.dnd_bind("<<Drop>>", self.handle_drop)
+
+    def _bind_resize_traces(self) -> None:
+        self.resize_width.trace_add("write", self._on_resize_width_changed)
+        self.resize_height.trace_add("write", self._on_resize_height_changed)
+
+    def _on_resize_width_changed(self, *_args) -> None:
+        self._sync_custom_resize_fields("width")
+
+    def _on_resize_height_changed(self, *_args) -> None:
+        self._sync_custom_resize_fields("height")
+
+    def _sync_custom_resize_fields(self, changed_field: str) -> None:
+        if self._resize_trace_guard:
+            return
+        if self.resize_mode.get() != RESIZE_CUSTOM_MODE or not self.lock_aspect_ratio.get():
+            return
+
+        ratio = self._reference_image_ratio()
+        if ratio is None:
+            return
+
+        try:
+            if changed_field == "width":
+                width = int(self.resize_width.get().strip())
+                if width <= 0:
+                    return
+                height = max(1, round(width / ratio))
+                self._resize_trace_guard = True
+                self.resize_height.set(str(height))
+            else:
+                height = int(self.resize_height.get().strip())
+                if height <= 0:
+                    return
+                width = max(1, round(height * ratio))
+                self._resize_trace_guard = True
+                self.resize_width.set(str(width))
+        except ValueError:
+            return
+        finally:
+            self._resize_trace_guard = False
+
+    def _reference_image_ratio(self) -> float | None:
+        if not self.image_files:
+            return None
+        try:
+            with Image.open(self.image_files[0]) as image:
+                width, height = image.size
+        except Exception:
+            return None
+        if height == 0:
+            return None
+        return width / height
 
     def _set_status(self, message: str) -> None:
         self.status_text.set(message)
@@ -648,6 +730,13 @@ class CompressApp:
         output_format = self.image_output_format.get()
         png_mode = self.png_mode.get()
         quality = int(self.image_quality.get())
+        resize_mode = self.resize_mode.get()
+        resize_value = self._parse_resize_value(
+            resize_mode,
+            self.resize_value.get(),
+            self.resize_width.get(),
+            self.resize_height.get(),
+        )
         self.image_log.delete("1.0", END)
         self._set_status("正在压缩图片…")
 
@@ -669,11 +758,15 @@ class CompressApp:
                         save_format=save_format,
                         quality=quality,
                         png_mode=png_mode,
+                        resize_mode=resize_mode,
+                        resize_value=resize_value,
+                        lock_aspect_ratio=self.lock_aspect_ratio.get(),
                     )
 
                 new_size = output_path.stat().st_size
                 ratio = (1 - new_size / original_size) * 100 if original_size else 0
                 strategy_note = self._compression_strategy_label(save_format, png_mode)
+                resize_note = self._resize_strategy_label(resize_mode, resize_value)
                 self.image_log.insert(
                     END,
                     f"{image_path}\n"
@@ -681,6 +774,7 @@ class CompressApp:
                     f"  压缩: {format_size(new_size)}\n"
                     f"  变化: {ratio:+.2f}%\n"
                     f"  模式: {strategy_note}\n"
+                    f"  尺寸: {resize_note}\n"
                     f"  输出: {output_path}\n\n",
                 )
                 success_count += 1
@@ -703,16 +797,20 @@ class CompressApp:
         save_format: str,
         quality: int,
         png_mode: str,
+        resize_mode: str,
+        resize_value: int | tuple[int, int] | None,
+        lock_aspect_ratio: bool,
     ) -> None:
+        prepared = self._resize_image_if_needed(image, resize_mode, resize_value, lock_aspect_ratio)
         if save_format == "PNG":
-            png_image = image.copy()
+            png_image = prepared.copy()
             if png_mode == PNG_TINIFY_MODE and imagequant is not None:
                 save_png_tinify_like(png_image, output_path)
             else:
                 save_png_standard(png_image, output_path)
             return
 
-        converted = image.convert("RGB") if save_format in {"JPEG", "WEBP"} else image.copy()
+        converted = prepared.convert("RGB") if save_format in {"JPEG", "WEBP"} else prepared.copy()
         save_kwargs: dict[str, int | bool] = {"optimize": True}
         if save_format in {"JPEG", "WEBP"}:
             save_kwargs["quality"] = quality
@@ -724,6 +822,85 @@ class CompressApp:
         if png_mode == PNG_TINIFY_MODE and imagequant is not None:
             return "Tinify-like PNG"
         return "标准 PNG"
+
+    def _parse_resize_value(
+        self,
+        resize_mode: str,
+        raw_value: str,
+        raw_width: str,
+        raw_height: str,
+    ) -> int | tuple[int, int] | None:
+        if resize_mode == RESIZE_KEEP_MODE:
+            return None
+        if resize_mode == RESIZE_CUSTOM_MODE:
+            try:
+                width = int(raw_width.strip())
+                height = int(raw_height.strip())
+            except ValueError as exc:
+                raise ValueError("自定义宽高必须是整数。") from exc
+            if width <= 0 or height <= 0:
+                raise ValueError("自定义宽高必须大于 0。")
+            return (width, height)
+        try:
+            value = int(raw_value.strip())
+        except ValueError as exc:
+            raise ValueError("尺寸参数必须是整数。") from exc
+        if value <= 0:
+            raise ValueError("尺寸参数必须大于 0。")
+        return value
+
+    def _resize_image_if_needed(
+        self,
+        image: Image.Image,
+        resize_mode: str,
+        resize_value: int | tuple[int, int] | None,
+        lock_aspect_ratio: bool = False,
+    ) -> Image.Image:
+        if resize_mode == RESIZE_KEEP_MODE or resize_value is None:
+            return image.copy()
+
+        width, height = image.size
+        if resize_mode == RESIZE_PERCENT_MODE:
+            scale = resize_value / 100
+            new_size = (
+                max(1, round(width * scale)),
+                max(1, round(height * scale)),
+            )
+        elif resize_mode == RESIZE_CUSTOM_MODE:
+            target_width, target_height = resize_value
+            if lock_aspect_ratio:
+                scale = min(target_width / width, target_height / height)
+                new_size = (
+                    max(1, round(width * scale)),
+                    max(1, round(height * scale)),
+                )
+            else:
+                new_size = (target_width, target_height)
+        else:
+            longest_edge = max(width, height)
+            if longest_edge <= resize_value:
+                return image.copy()
+            scale = resize_value / longest_edge
+            new_size = (
+                max(1, round(width * scale)),
+                max(1, round(height * scale)),
+            )
+
+        if new_size == image.size:
+            return image.copy()
+        return image.resize(new_size, Image.Resampling.LANCZOS)
+
+    def _resize_strategy_label(self, resize_mode: str, resize_value: int | tuple[int, int] | None) -> str:
+        if resize_mode == RESIZE_KEEP_MODE or resize_value is None:
+            return "保持原尺寸"
+        if resize_mode == RESIZE_PERCENT_MODE:
+            return f"按百分比 {resize_value}%"
+        if resize_mode == RESIZE_CUSTOM_MODE:
+            width, height = resize_value
+            if self.lock_aspect_ratio.get():
+                return f"自定义 {width}x{height}（锁定比例）"
+            return f"自定义 {width}x{height}（拉伸）"
+        return f"最长边 {resize_value}px"
 
     def _resolve_image_format(self, image_path: Path, output_format: str) -> tuple[str, str]:
         if output_format == "保持原格式":
