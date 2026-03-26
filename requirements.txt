@@ -1,0 +1,4 @@
+Pillow>=10.0.0
+tkinterdnd2>=0.4.2
+imagequant>=1.1.4
+zopfli>=0.2.3
